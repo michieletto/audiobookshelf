@@ -123,7 +123,7 @@ class RssFeedManager {
         attributes: ['id', 'updatedAt'],
         include: {
           model: Database.bookModel,
-          attributes: ['id', 'audioFiles', 'updatedAt'],
+          attributes: ['id', 'numTracks', 'updatedAt'],
           through: {
             attributes: []
           },
@@ -134,7 +134,7 @@ class RssFeedManager {
         }
       })
 
-      const totalBookTracks = feed.entity.books.reduce((total, book) => total + book.includedAudioFiles.length, 0)
+      const totalBookTracks = feed.entity.books.reduce((total, book) => total + book.numTracks, 0)
       if (feed.feedEpisodes.length !== totalBookTracks) {
         return true
       }

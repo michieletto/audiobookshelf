@@ -7,6 +7,7 @@ const { filePathToPOSIX, getFileTimestampsWithIno } = require('../utils/fileUtil
 const LibraryFile = require('../objects/files/LibraryFile')
 const Book = require('./Book')
 const Podcast = require('./Podcast')
+const { sideAttribute, saveWithSideTable, normalizeScopeInclude, isLeanQuery } = require('./helpers/sideTable')
 
 /**
  * @typedef LibraryFileObject
@@ -715,6 +716,43 @@ class LibraryItem extends Model {
    * Initialize model
    * @param {import('../Database').sequelize} sequelize
    */
+  /**
+   * Config for the 1:1 side table holding the large libraryFiles JSON
+   * @see module:server/models/helpers/sideTable
+   */
+  static get sideTable() {
+    return {
+      assoc: 'libraryItemFile',
+      model: 'libraryItemFile',
+      foreignKey: 'libraryItemId',
+      fields: ['libraryFiles'],
+      deriveColumns: (libraryItem) => ({ numFiles: libraryItem.libraryFiles?.length || 0 })
+    }
+  }
+
+  /**
+   * @see module:server/models/helpers/sideTable normalizeScopeInclude
+   */
+  static _injectScope(options) {
+    normalizeScopeInclude(options)
+    if (isLeanQuery(options, LibraryItem.sideTable.fields)) return
+    super._injectScope(options)
+  }
+
+  /**
+   * Saves the library files side row together with the library item
+   */
+  save(options) {
+    return saveWithSideTable(this, options, super.save, LibraryItem.sideTable)
+  }
+
+  /**
+   * Library files are loaded with the item unless the query used `unscoped()`
+   */
+  get hasFilesLoaded() {
+    return !!this.libraryItemFile
+  }
+
   static init(sequelize) {
     super.init(
       {
@@ -737,7 +775,10 @@ class LibraryItem extends Model {
         size: DataTypes.BIGINT,
         lastScan: DataTypes.DATE,
         lastScanVersion: DataTypes.STRING,
-        libraryFiles: DataTypes.JSON,
+        // libraryFiles is stored in the libraryItemFiles table (see LibraryItemFile)
+        libraryFiles: sideAttribute(LibraryItem.sideTable, 'libraryFiles'),
+        // Count kept in sync with the side table on save so listings do not need to load it
+        numFiles: { type: DataTypes.INTEGER, defaultValue: 0 },
         extraData: DataTypes.JSON,
         title: DataTypes.STRING,
         titleIgnorePrefix: DataTypes.STRING,
@@ -1020,7 +1061,7 @@ class LibraryItem extends Model {
       isInvalid: !!this.isInvalid,
       mediaType: this.mediaType,
       media: this.media.toOldJSONMinified(),
-      numFiles: this.libraryFiles.length,
+      numFiles: this.hasFilesLoaded ? this.libraryFiles.length : this.numFiles || 0,
       size: this.size
     }
   }

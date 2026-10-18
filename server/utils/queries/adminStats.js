@@ -205,7 +205,7 @@ module.exports = {
    * @returns {Promise<{numBookAudioFiles: number, numPodcastAudioFiles: number, numAudioFiles: number}>}
    */
   async getNumAudioFiles() {
-    const [numBookAudioFilesRow] = await Database.sequelize.query(`SELECT SUM(json_array_length(b.audioFiles)) AS numAudioFiles FROM books b;`)
+    const [numBookAudioFilesRow] = await Database.sequelize.query(`SELECT SUM(b.numAudioFiles) AS numAudioFiles FROM books b;`)
     const numBookAudioFiles = numBookAudioFilesRow[0]?.numAudioFiles || 0
     const numPodcastAudioFiles = await Database.podcastEpisodeModel.count()
     return {

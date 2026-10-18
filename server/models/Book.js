@@ -3,6 +3,7 @@ const Logger = require('../Logger')
 const { getTitlePrefixAtEnd, getTitleIgnorePrefix } = require('../utils')
 const parseNameString = require('../utils/parsers/parseNameString')
 const htmlSanitizer = require('../utils/htmlSanitizer')
+const { sideAttribute, saveWithSideTable, normalizeScopeInclude, isLeanQuery } = require('./helpers/sideTable')
 const libraryItemsBookFilters = require('../utils/queries/libraryItemsBookFilters')
 const SocketAuthority = require('../SocketAuthority')
 
@@ -161,9 +162,15 @@ class Book extends Model {
         duration: DataTypes.FLOAT,
 
         narrators: DataTypes.JSON,
-        audioFiles: DataTypes.JSON,
+        // audioFiles and chapters are stored in the bookFiles table (see BookFile)
+        audioFiles: sideAttribute(Book.sideTable, 'audioFiles'),
         ebookFile: DataTypes.JSON,
-        chapters: DataTypes.JSON,
+        chapters: sideAttribute(Book.sideTable, 'chapters'),
+        // Counts kept in sync with the side table on save so listings do not need to load it
+        numAudioFiles: { type: DataTypes.INTEGER, defaultValue: 0 },
+        numTracks: { type: DataTypes.INTEGER, defaultValue: 0 },
+        numChapters: { type: DataTypes.INTEGER, defaultValue: 0 },
+        audioFilesSize: { type: DataTypes.BIGINT, defaultValue: 0 },
         tags: DataTypes.JSON,
         genres: DataTypes.JSON
       },
@@ -257,6 +264,51 @@ class Book extends Model {
       .join(', ')
   }
 
+  /**
+   * Config for the 1:1 side table holding the large JSON columns
+   * @see module:server/models/helpers/sideTable
+   */
+  static get sideTable() {
+    return {
+      assoc: 'bookFile',
+      model: 'bookFile',
+      foreignKey: 'bookId',
+      fields: ['audioFiles', 'chapters'],
+      deriveColumns: (book) => {
+        const audioFiles = book.audioFiles || []
+        return {
+          numAudioFiles: audioFiles.length,
+          numTracks: audioFiles.filter((af) => !af.exclude).length,
+          numChapters: book.chapters?.length || 0,
+          audioFilesSize: audioFiles.reduce((total, af) => total + (Number(af.metadata?.size) || 0), 0)
+        }
+      }
+    }
+  }
+
+  /**
+   * @see module:server/models/helpers/sideTable normalizeScopeInclude
+   */
+  static _injectScope(options) {
+    normalizeScopeInclude(options)
+    if (isLeanQuery(options, Book.sideTable.fields)) return
+    super._injectScope(options)
+  }
+
+  /**
+   * Saves the audio files and chapters side row together with the book
+   */
+  save(options) {
+    return saveWithSideTable(this, options, super.save, Book.sideTable)
+  }
+
+  /**
+   * Audio files and chapters are loaded with the book unless the query used `unscoped()`
+   */
+  get hasFilesLoaded() {
+    return !!this.bookFile
+  }
+
   get includedAudioFiles() {
     return this.audioFiles.filter((af) => !af.exclude)
   }
@@ -328,8 +380,7 @@ class Book extends Model {
    * @returns {number}
    */
   get size() {
-    let total = 0
-    this.audioFiles.forEach((af) => (total += af.metadata.size))
+    let total = this.hasFilesLoaded ? this.audioFiles.reduce((sum, af) => sum + af.metadata.size, 0) : Number(this.audioFilesSize) || 0
     if (this.ebookFile) {
       total += this.ebookFile.metadata.size
     }
@@ -650,9 +701,9 @@ class Book extends Model {
       metadata: this.oldMetadataToJSONMinified(),
       coverPath: this.coverPath,
       tags: [...(this.tags || [])],
-      numTracks: this.includedAudioFiles.length,
-      numAudioFiles: this.audioFiles?.length || 0,
-      numChapters: this.chapters?.length || 0,
+      numTracks: this.hasFilesLoaded ? this.includedAudioFiles.length : this.numTracks || 0,
+      numAudioFiles: this.hasFilesLoaded ? this.audioFiles?.length || 0 : this.numAudioFiles || 0,
+      numChapters: this.hasFilesLoaded ? this.chapters?.length || 0 : this.numChapters || 0,
       duration: this.duration,
       size: this.size,
       ebookFormat: this.ebookFile?.ebookFormat

@@ -97,6 +97,16 @@ class Database {
     return this.models.podcastEpisode
   }
 
+  /** @type {typeof import('./models/BookFile')} */
+  get bookFileModel() {
+    return this.models.bookFile
+  }
+
+  /** @type {typeof import('./models/LibraryItemFile')} */
+  get libraryItemFileModel() {
+    return this.models.libraryItemFile
+  }
+
   /** @type {typeof import('./models/LibraryItem')} */
   get libraryItemModel() {
     return this.models.libraryItem
@@ -321,9 +331,11 @@ class Database {
     require('./models/Library').init(this.sequelize)
     require('./models/LibraryFolder').init(this.sequelize)
     require('./models/Book').init(this.sequelize)
+    require('./models/BookFile').init(this.sequelize)
     require('./models/Podcast').init(this.sequelize)
     require('./models/PodcastEpisode').init(this.sequelize)
     require('./models/LibraryItem').init(this.sequelize)
+    require('./models/LibraryItemFile').init(this.sequelize)
     require('./models/MediaProgress').init(this.sequelize)
     require('./models/Series').init(this.sequelize)
     require('./models/BookSeries').init(this.sequelize)

@@ -1006,7 +1006,14 @@ async function handleMigrateLibraryItems(DatabaseModels, oldLibraryItems) {
   const newItemsBooksPodcasts = migrateLibraryItems(oldLibraryItems)
   for (const model in newItemsBooksPodcasts) {
     Logger.info(`[dbMigration] Inserting ${newItemsBooksPodcasts[model].length} ${model} rows`)
-    await DatabaseModels[model].bulkCreate(newItemsBooksPodcasts[model])
+    if (model === 'book' || model === 'libraryItem') {
+      // audioFiles, chapters and libraryFiles are saved to side tables, which bulkCreate does not do
+      for (const record of newItemsBooksPodcasts[model]) {
+        await DatabaseModels[model].create(record)
+      }
+    } else {
+      await DatabaseModels[model].bulkCreate(newItemsBooksPodcasts[model])
+    }
   }
 }
 

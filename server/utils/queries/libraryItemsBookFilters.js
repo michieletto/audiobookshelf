@@ -160,7 +160,7 @@ module.exports = {
       } else if (value === 'ebook-in-progress') {
         // Filters for ebook only
         mediaWhere = [
-          Sequelize.where(Sequelize.fn('json_array_length', Sequelize.col('audioFiles')), 0),
+          Sequelize.where(Sequelize.col('numAudioFiles'), 0),
           {
             '$mediaProgresses.ebookProgress$': {
               [Sequelize.Op.gt]: 0
@@ -173,7 +173,7 @@ module.exports = {
       } else if (value === 'ebook-finished') {
         // Filters for ebook only
         mediaWhere = [
-          Sequelize.where(Sequelize.fn('json_array_length', Sequelize.col('audioFiles')), 0),
+          Sequelize.where(Sequelize.col('numAudioFiles'), 0),
           {
             '$mediaProgresses.isFinished$': true,
             ebookFile: {
@@ -199,13 +199,13 @@ module.exports = {
       mediaWhere['language'] = value
     } else if (group === 'tracks') {
       if (value === 'none') {
-        mediaWhere = Sequelize.where(Sequelize.fn('json_array_length', Sequelize.col('audioFiles')), 0)
+        mediaWhere = Sequelize.where(Sequelize.col('numAudioFiles'), 0)
       } else if (value === 'multi') {
-        mediaWhere = Sequelize.where(Sequelize.fn('json_array_length', Sequelize.col('audioFiles')), {
+        mediaWhere = Sequelize.where(Sequelize.col('numAudioFiles'), {
           [Sequelize.Op.gt]: 1
         })
       } else {
-        mediaWhere = Sequelize.where(Sequelize.fn('json_array_length', Sequelize.col('audioFiles')), 1)
+        mediaWhere = Sequelize.where(Sequelize.col('numAudioFiles'), 1)
       }
     } else if (group === 'ebooks') {
       if (value === 'ebook') {
@@ -318,7 +318,7 @@ module.exports = {
       where: seriesWhere,
       include: [
         {
-          model: Database.bookModel,
+          model: Database.bookModel.unscoped(),
           attributes: ['id', 'title'],
           through: {
             attributes: ['id', 'seriesId', 'bookId', 'sequence']
@@ -358,7 +358,7 @@ module.exports = {
   },
 
   async findAndCountAll(findOptions, limit, offset, useCountCache) {
-    const model = Database.bookModel
+    const model = Database.bookModel.unscoped()
     if (useCountCache) {
       const countCacheKey = stringifySequelizeQuery(findOptions)
       Logger.debug(`[LibraryItemsBookFilters] countCacheKey: ${countCacheKey}`)
@@ -456,13 +456,9 @@ module.exports = {
       })
     } else if (filterGroup === 'ebooks' && filterValue === 'supplementary') {
       // TODO: Temp workaround for filtering supplementary ebook
-      libraryItemWhere['libraryFiles'] = {
-        [Sequelize.Op.substring]: `"isSupplementary":true`
-      }
+      libraryItemWhere[Sequelize.Op.and] = Sequelize.literal(`EXISTS (SELECT 1 FROM libraryItemFiles lif WHERE lif.libraryItemId = libraryItem.id AND lif.libraryFiles LIKE '%"isSupplementary":true%')`)
     } else if (filterGroup === 'ebooks' && filterValue === 'no-supplementary') {
-      libraryItemWhere['libraryFiles'] = {
-        [Sequelize.Op.notLike]: Sequelize.literal(`\'%"isSupplementary":true%\'`)
-      }
+      libraryItemWhere[Sequelize.Op.and] = Sequelize.literal(`NOT EXISTS (SELECT 1 FROM libraryItemFiles lif WHERE lif.libraryItemId = libraryItem.id AND lif.libraryFiles LIKE '%"isSupplementary":true%')`)
     } else if (filterGroup === 'missing' && filterValue === 'authors') {
       authorInclude = {
         model: Database.authorModel,
@@ -573,7 +569,7 @@ module.exports = {
         where: seriesBookWhere,
         include: [
           {
-            model: Database.libraryItemModel,
+            model: Database.libraryItemModel.unscoped(),
             required: true,
             where: libraryItemWhere,
             include: libraryItemIncludes
@@ -609,7 +605,7 @@ module.exports = {
       replacements,
       include: [
         {
-          model: Database.libraryItemModel,
+          model: Database.libraryItemModel.unscoped(),
           required: true,
           where: libraryItemWhere,
           include: libraryItemIncludes
@@ -765,11 +761,11 @@ module.exports = {
           }
         },
         include: {
-          model: Database.bookModel,
+          model: Database.bookModel.unscoped(),
           where: bookWhere,
           include: [
             {
-              model: Database.libraryItemModel,
+              model: Database.libraryItemModel.unscoped(),
               include: libraryItemIncludes
             },
             {
@@ -868,7 +864,7 @@ module.exports = {
         separate: true,
         required: true,
         include: {
-          model: Database.bookModel,
+          model: Database.bookModel.unscoped(),
           where: userPermissionBookWhere.bookWhere
         },
         order: [[Sequelize.literal('CAST(sequence AS FLOAT) ASC NULLS LAST')]],
@@ -911,7 +907,7 @@ module.exports = {
 
     const baseDiscoverInclude = [
       {
-        model: Database.libraryItemModel,
+        model: Database.libraryItemModel.unscoped(),
         where: {
           libraryId
         }
@@ -926,7 +922,7 @@ module.exports = {
     ]
 
     // Step 2a: Count with lightweight includes only
-    const count = await Database.bookModel.count({
+    const count = await Database.bookModel.unscoped().count({
       where: discoverWhere,
       replacements: userPermissionBookWhere.replacements,
       include: baseDiscoverInclude,
@@ -936,7 +932,7 @@ module.exports = {
     })
 
     // Step 2b: Select random IDs with lightweight includes only
-    const randomSelection = await Database.bookModel.findAll({
+    const randomSelection = await Database.bookModel.unscoped().findAll({
       attributes: ['id'],
       where: discoverWhere,
       replacements: userPermissionBookWhere.replacements,
@@ -956,7 +952,7 @@ module.exports = {
     }
 
     // Step 2c: Hydrate selected IDs with full metadata for API response
-    const books = await Database.bookModel.findAll({
+    const books = await Database.bookModel.unscoped().findAll({
       where: {
         id: {
           [Sequelize.Op.in]: selectedIds
@@ -964,7 +960,7 @@ module.exports = {
       },
       include: [
         {
-          model: Database.libraryItemModel,
+          model: Database.libraryItemModel.unscoped(),
           where: {
             libraryId
           },
@@ -1310,7 +1306,7 @@ module.exports = {
    * @returns {Promise<{ totalSize:number, totalDuration:number, numAudioFiles:number, totalItems:number}>}
    */
   async getBookLibraryStats(libraryId) {
-    const [statResults] = await Database.sequelize.query(`SELECT SUM(li.size) AS totalSize, SUM(b.duration) AS totalDuration, SUM(json_array_length(b.audioFiles)) AS numAudioFiles, COUNT(*) AS totalItems FROM libraryItems li, books b WHERE b.id = li.mediaId AND li.libraryId = :libraryId;`, {
+    const [statResults] = await Database.sequelize.query(`SELECT SUM(li.size) AS totalSize, SUM(b.duration) AS totalDuration, SUM(b.numAudioFiles) AS numAudioFiles, COUNT(*) AS totalItems FROM libraryItems li, books b WHERE b.id = li.mediaId AND li.libraryId = :libraryId;`, {
       replacements: {
         libraryId
       }
